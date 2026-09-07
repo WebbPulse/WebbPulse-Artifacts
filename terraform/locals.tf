@@ -57,27 +57,45 @@ locals {
     },
   ]
 
-  # The publish actions themselves. PublishPackageVersion creates the version and PutPackageMetadata
-  # is what npm dist tags go through. ReadFromRepository is here because both publish workflows call
-  # describe-package-version first to decide whether the version already exists, which is what makes
-  # a re-run of an already released tag green rather than a failure; the remaining read actions are
-  # what GetRepositoryEndpoint and that lookup need.
-  publisher_repository_actions = [
+  # The publish actions themselves, split by the resource each one is evaluated against, because
+  # CodeArtifact does not scope them all the same way. DescribePackageVersion, ListPackageVersions,
+  # PublishPackageVersion and PutPackageMetadata are package-level actions: IAM evaluates them
+  # against arn:...:package/<domain>/<repository>/<format>/<namespace>/<name>, so a statement that
+  # names the repository ARN silently denies them. The first webbpulse-typescript release proved it:
+  # the version lookup step got AccessDeniedException on DescribePackageVersion even though the
+  # action was listed, and the publish itself only went through because the repository resource
+  # policy (rendered by the codeartifact module on the package ARN) allowed it. The remaining
+  # actions are repository-level and stay on the repository ARN.
+  publisher_package_actions = [
     "codeartifact:DescribePackageVersion",
-    "codeartifact:DescribeRepository",
-    "codeartifact:GetRepositoryEndpoint",
     "codeartifact:ListPackageVersions",
-    "codeartifact:ListPackages",
     "codeartifact:PublishPackageVersion",
     "codeartifact:PutPackageMetadata",
+  ]
+
+  publisher_repository_actions = [
+    "codeartifact:DescribeRepository",
+    "codeartifact:GetRepositoryEndpoint",
+    "codeartifact:ListPackages",
     "codeartifact:ReadFromRepository",
   ]
+
+  # A repository ARN is arn:aws:codeartifact:<region>:<account>:repository/<domain>/<repository>;
+  # swapping the one ":repository/" segment gives the package ARN prefix for every package of every
+  # format in that repository. Derived rather than assembled so it cannot drift from the module.
+  python_publish_package_arn = "${replace(local.python_publish_repository_arn, ":repository/", ":package/")}/*"
+  npm_publish_package_arn    = "${replace(local.npm_publish_repository_arn, ":repository/", ":package/")}/*"
 
   python_publisher_policy_statements = concat(
     local.publisher_token_statements,
     [
       {
-        sid       = "CodeArtifactPublishPython"
+        sid       = "CodeArtifactPublishPythonPackages"
+        actions   = local.publisher_package_actions
+        resources = [local.python_publish_package_arn]
+      },
+      {
+        sid       = "CodeArtifactPublishPythonRepository"
         actions   = local.publisher_repository_actions
         resources = [local.python_publish_repository_arn]
       },
@@ -88,7 +106,12 @@ locals {
     local.publisher_token_statements,
     [
       {
-        sid       = "CodeArtifactPublishNpm"
+        sid       = "CodeArtifactPublishNpmPackages"
+        actions   = local.publisher_package_actions
+        resources = [local.npm_publish_package_arn]
+      },
+      {
+        sid       = "CodeArtifactPublishNpmRepository"
         actions   = local.publisher_repository_actions
         resources = [local.npm_publish_repository_arn]
       },
