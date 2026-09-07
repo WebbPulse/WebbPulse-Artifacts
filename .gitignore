@@ -1,0 +1,21 @@
+# Terraform state never lives in git; this root's state is in HCP Terraform.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.tfstate.lock.info
+
+# Saved plans can contain resolved variable values.
+*.tfplan
+
+# Variable files can carry credentials.
+*.tfvars
+*.tfvars.json
+
+# Anything credential-shaped.
+*.pem
+*.key
+credentials
+.env
+
+# .terraform.lock.hcl is deliberately NOT ignored. A root with no committed lock
+# file floats its provider versions on every run.
