@@ -24,7 +24,10 @@ module "python_publisher_role" {
   # This root owns the account's GitHub OIDC provider.
   create_oidc_provider = true
 
-  subjects = ["repo:WebbPulse/webbpulse-python:environment:publish"]
+  # GitHub issues the rename-proof immutable subject (repo:ORG@ORG_ID/REPO@REPO_ID:...) for this
+  # repository, so the trust policy must name that form. Read it back with
+  # gh api repos/WebbPulse/webbpulse-python/actions/oidc/customization/sub (sub_claim_prefix).
+  subjects = ["repo:WebbPulse@185014056/webbpulse-python@1359998772:environment:publish"]
 
   policy_statements = local.python_publisher_policy_statements
 }
@@ -41,7 +44,8 @@ module "npm_publisher_role" {
   create_oidc_provider = false
   oidc_provider_arn    = module.python_publisher_role.oidc_provider_arn
 
-  subjects = ["repo:WebbPulse/webbpulse-typescript:environment:publish"]
+  # Same immutable subject form as above; prefix from the repository's OIDC customization endpoint.
+  subjects = ["repo:WebbPulse@185014056/webbpulse-typescript@1359998728:environment:publish"]
 
   policy_statements = local.npm_publisher_policy_statements
 }
