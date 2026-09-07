@@ -79,7 +79,11 @@ the publish grant is scoped so that nothing can.
 
 Read access is granted to the four application accounts at the domain and on every repository.
 Publish access is granted only to the two publisher roles below, and only on the repository each
-one owns.
+one owns: `python` and `npm` and nothing else. Nothing publishes into `shared` either, because a
+package written into the fan-in would be found ahead of the same package in `python` or `npm`,
+which is the shadowing problem the store split exists to prevent one tier further up. Both the
+repository policies here and each role's own identity policy say so, so a publish needs both halves
+to agree.
 
 ## Publishing
 

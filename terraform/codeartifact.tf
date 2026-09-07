@@ -53,10 +53,19 @@ module "codeartifact" {
   reader_account_ids = local.consumer_account_ids
 
   # Publishing is scoped to the two publisher roles created in this root, never to an account root.
-  # The module confines the publish grant to the non-store repositories by default, so python and
-  # npm and shared take it and the two proxies do not.
   publisher_principal_arns = [
     module.python_publisher_role.role_arn,
     module.npm_publisher_role.role_arn,
   ]
+
+  # The module would default this to every repository without an external connection, which would
+  # include shared. Nothing should ever publish into the fan-in: a package written there would be
+  # found ahead of the same package in python or npm, which is the shadowing problem the store split
+  # exists to prevent, one tier further up. Naming the two repositories explicitly leaves shared
+  # readable and not writable.
+  #
+  # Each role's own identity policy already narrows it to the single repository it owns, so a
+  # publish needs both halves to agree. This is the resource half, and it is the half that still
+  # holds if an identity policy is ever widened by accident.
+  publisher_repository_keys = ["python", "npm"]
 }
