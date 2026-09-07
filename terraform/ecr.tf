@@ -11,10 +11,10 @@ module "ecr" {
   # console groups on it, so every shared base image sorts together.
   name_prefix = "webbpulse"
 
+  # The base layer the per-domain FastAPI Lambdas are built on. ECR repositories carry no
+  # description field, so what this image is for is recorded here rather than on the resource.
   repositories = {
-    "python-lambda-base" = {
-      description = "Base image for the per-domain FastAPI Lambdas"
-    }
+    "python-lambda-base" = {}
   }
 
   # Immutable tags are the point of a base image: a tag that cannot be moved is what makes a build
