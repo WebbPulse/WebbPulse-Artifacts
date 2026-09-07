@@ -11,7 +11,7 @@ single project owns. It deploys into the AWS account **WebbPulse Artifacts**
 | --- | --- |
 | **CodeArtifact** | The organization's package domain and its repositories: the shared Python and npm packages the application repositories build against, plus the upstream connections that proxy PyPI and npm |
 | **ECR** | Base image repositories. The per-domain FastAPI Lambdas ship as OCI images, and the base layer they are built on belongs here rather than in any one application's account |
-| **Publisher roles** | The two IAM roles the package repositories assume through GitHub OIDC to publish, and this account's GitHub OIDC provider |
+| **Publisher roles** | The three IAM roles assumed through GitHub OIDC to publish: two for the package repositories, one for this repository's own base image build, plus this account's GitHub OIDC provider |
 | **Account housekeeping** | A tag based resource group, Cost Explorer anomaly detection, and two small budgets |
 
 Nothing else. **No workloads run in this account** - no Lambdas serving traffic,
@@ -87,13 +87,18 @@ to agree.
 
 ## Publishing
 
-Two repositories publish into this account. Each assumes a role through GitHub's OIDC provider, so
-no AWS keys live in GitHub.
+Three repositories publish into this account: the two package repositories, and this one, which
+builds its own base image. Each assumes a role through GitHub's OIDC provider, so no AWS keys live
+in GitHub.
 
 | Repository | Package | Publishes to | Role |
 | --- | --- | --- | --- |
 | `WebbPulse/webbpulse-python` | `webbpulse` | `python` | `artifacts-shared-python-publisher` |
 | `WebbPulse/webbpulse-typescript` | `@webbpulse/*` | `npm` | `artifacts-shared-npm-publisher` |
+| `WebbPulse/WebbPulse-Artifacts` | `webbpulse/python-lambda-base` | ECR | `artifacts-shared-base-image-publisher` |
+
+The two package roles are described below. The third publishes this repository's own base image and
+is scoped to `main` rather than to an environment; see [Base images](#base-images).
 
 Trust is scoped to the repository **and** its `publish` GitHub Environment, not to the repository
 alone. The subject GitHub puts in the token for an environment-bound job is
@@ -185,19 +190,92 @@ defaults to twelve hours regardless of the role's maximum session duration.
 
 ## Base images
 
-`webbpulse/python-lambda-base` is the base layer the per-domain FastAPI Lambdas are built on. Tags
-are immutable, which is the point: a tag that cannot move is what makes a build reproducible and
-what makes a recorded digest mean something later. There is no floating `latest`, so a consumer
-pins an explicit tag or a digest.
+`webbpulse/python-lambda-base` is the base layer the per-domain FastAPI Lambdas are built on. The
+Dockerfile is [`images/python-lambda-base/Dockerfile`](images/python-lambda-base/Dockerfile).
 
-The four application accounts may pull. The repository policy also lets `lambda.amazonaws.com`
-retrieve the image on behalf of a function in one of those accounts, which is what keeps a
-container image Lambda alive when Lambda re-fetches the image after an optimisation pass. Lambda
-cannot pull an image across regions, so a consumer function has to run in `us-west-2`.
+### What is in it, and what is deliberately not
+
+The image holds two things and nothing else:
+
+- The Python 3.13 runtime, `public.ecr.aws/docker/library/python:3.13-slim`, pinned by digest. The
+  Dockerfile carries the two commands that read the current digest back, so a bump is mechanical.
+  Public ECR mirrors Docker Hub's official images, so this is the same content without Docker Hub's
+  anonymous pull rate limit.
+- The AWS Lambda Web Adapter, copied from `public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1` to
+  `/opt/extensions/lambda-adapter`, also pinned by digest.
+
+Plus the conventions every WebbPulse Lambda image shares: a non-root `app` user, `/app` as the
+working directory, and `AWS_LWA_PORT` and `PORT` both set to `8080`. Both port names are set because
+the adapter reads `AWS_LWA_PORT` while most frameworks read `PORT`, and an application binding one
+while the adapter polls the other hangs on every invoke instead of failing loudly.
+`AWS_LWA_READINESS_CHECK_PATH` is left unset on purpose: the adapter blocks the first invoke until
+that path answers, so it has to be a path the application actually serves and one that does no I/O.
+Each entrypoint sets it.
+
+**It does not contain the `webbpulse` package or any application dependencies.** That is the
+decision, and it is what makes the base worth having. Dependencies install in each application's own
+build, so bumping the shared package or an application requirement never requires a base rebuild,
+and this image only changes when the runtime or the adapter does. The cost is that application
+builds do not share a prebuilt dependency layer through the base; they share it through the build
+cache and through their own image layers instead, which is where a per-project dependency set
+belongs anyway.
+
+There is no `ENTRYPOINT` and no `CMD`. This image never runs on its own; every application image
+sets its own `CMD` to the entrypoint module for the domain it serves.
+
+### Multi-architecture, and why that is safe
+
+The image is pushed as a multi-architecture manifest holding `linux/amd64` and `linux/arm64`,
+because CarModPicker builds x86_64 Lambdas and Portfolio builds arm64 and both build against this
+one base.
+
+Lambda does not support multi-architecture container images, but that constraint is on the image
+Lambda pulls for a function, not on the parent an application image is built `FROM`. An application
+build resolves the one manifest matching its own `--platform` and produces a single-platform image
+of its own, which is what Lambda sees. This is why the shared `container-image.yml` reusable
+workflow cannot build this image: it takes one platform and then asserts the pushed manifest is not
+an index, which is right for an application image and wrong for a base. The workflow here asserts
+the opposite, that the manifest *is* an index and that it holds both platforms, so a base that
+quietly went single platform fails here rather than in the other project's build weeks later.
+
+### Tags
+
+Tags are immutable, which is the point: a tag that cannot move is what makes a build reproducible
+and what makes a recorded digest mean something later. The build pushes exactly one tag,
+`sha-<full commit sha>`. **There is no moving `py3.13` or `latest` tag**, and there cannot be one in
+this repository, because `image_tag_mutability` is a repository-level setting and `IMMUTABLE` would
+refuse the second push of any moving tag. Consumers pin `sha-<commit>` or the digest, which the
+workflow's job summary prints ready to paste into a `FROM` line.
+
+### Pulling it
+
+The four application accounts may pull, granted by the repository policy `ecr.tf` builds from
+`local.consumer_account_ids`. The policy also lets `lambda.amazonaws.com` retrieve the image on
+behalf of a function in one of those accounts. Lambda never actually pulls *this* image, since it is
+only ever a build-time parent, so that statement is inert here; it is the module's fixed pairing and
+it is the correct pairing to keep, because for an image Lambda genuinely does pull cross-account the
+service-principal statement is not optional and omitting it fails weeks later rather than at create
+time. Lambda cannot pull an image across regions, so a consumer function has to run in `us-west-2`.
 
 A `docker build` that installs from CodeArtifact needs the token inside the build. Use a BuildKit
 secret mount, never a build arg or an `ENV`: both of those are recorded in image history and ship
 with the image.
+
+### Building and pushing it
+
+`.github/workflows/python-lambda-base.yml` runs on a push to `main` touching
+`images/python-lambda-base/**`, and on `workflow_dispatch`. It assumes
+`artifacts-shared-base-image-publisher` through GitHub OIDC, so no AWS keys live in GitHub.
+
+Trust is scoped to `ref:refs/heads/main` rather than to a GitHub environment, unlike the two package
+publishers. A package version can never be republished under the same version, so a release wants a
+protection rule in front of it; a base image push is a different shape, since the tag is the commit
+sha, the repository refuses to move it, and a bad image is superseded by the next commit rather than
+burning a version number. A pull request or a branch build cannot assume the role at all.
+
+The role ARN is read from the repository variable `BASE_IMAGE_PUBLISHER_ROLE_ARN`, set from this
+root's `base_image_publisher_role_arn` output after an apply. It is a variable rather than a secret
+because a role ARN is a name, not a credential.
 
 ## Making a change
 
@@ -214,6 +292,11 @@ with the image.
 ```
 .
 ├── README.md
+├── .github/workflows/
+│   └── python-lambda-base.yml   builds and pushes the shared base image
+├── images/
+│   └── python-lambda-base/
+│       └── Dockerfile           the Python 3.13 runtime plus the Lambda Web Adapter
 └── terraform/
     ├── versions.tf        required_version, providers, and the cloud block
     ├── providers.tf       the aws provider and its default tags
@@ -221,7 +304,7 @@ with the image.
     ├── locals.tf          the prefix, the common tags, and the publisher policy statements
     ├── data.tf            caller identity and region
     ├── codeartifact.tf    the domain and its five repositories
-    ├── iam_publishers.tf  the two publisher roles and the GitHub OIDC provider
+    ├── iam_publishers.tf  the three publisher roles and the GitHub OIDC provider
     ├── ecr.tf             the shared base image repositories
     ├── management.tf      resource group, cost anomaly detection, budgets
     └── outputs.tf         everything a publisher or a consumer needs to wire in
