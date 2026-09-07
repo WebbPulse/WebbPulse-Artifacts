@@ -125,3 +125,8 @@ output "consumer_policy_json" {
     )
   })
 }
+
+output "base_image_publisher_role_arn" {
+  description = "Role WebbPulse/WebbPulse-Artifacts assumes to push the shared Python Lambda base image. Set it as the BASE_IMAGE_PUBLISHER_ROLE_ARN repository variable on that repository; it is a name rather than a credential, so it is a variable and not a secret"
+  value       = module.base_image_publisher_role.role_arn
+}

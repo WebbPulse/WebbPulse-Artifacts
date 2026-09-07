@@ -94,4 +94,38 @@ locals {
       },
     ],
   )
+
+  # The base image repository this account's own CI pushes to. Scoped to the one repository rather
+  # than to every repository the ECR module makes, so a second base image added later is an explicit
+  # grant rather than something this role silently acquires.
+  base_image_repository_arn = module.ecr.repository_arns["python-lambda-base"]
+
+  # What a push needs, and nothing more. GetAuthorizationToken is a registry level action with no
+  # resource of its own, which is why it sits on "*" in its own statement; every other action is
+  # scoped to the one repository. The read actions are here because buildx pulls the previous
+  # manifest to reuse layers and because the run reads back the manifest it just pushed to assert
+  # that it is a two-platform index. There is no ecr:DeleteRepository, no policy write, and no
+  # ecr:BatchDeleteImage: the lifecycle policy is what removes images, not CI.
+  base_image_publisher_policy_statements = [
+    {
+      sid       = "EcrAuth"
+      actions   = ["ecr:GetAuthorizationToken"]
+      resources = ["*"]
+    },
+    {
+      sid = "EcrPushBaseImage"
+      actions = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+      ]
+      resources = [local.base_image_repository_arn]
+    },
+  ]
 }

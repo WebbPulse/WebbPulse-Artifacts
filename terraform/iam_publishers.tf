@@ -49,3 +49,34 @@ module "npm_publisher_role" {
 
   policy_statements = local.npm_publisher_policy_statements
 }
+
+# The role the WebbPulse-Artifacts repository itself assumes to push the shared Python Lambda base
+# image to ECR. It is a publisher like the two above, so it lives in this file, but what it
+# publishes is an image rather than a package and the trust is scoped differently.
+#
+# No GitHub environment. The two package publishers gate on environment:publish because a package
+# version can never be republished under the same version, so a release wants a protection rule in
+# front of it. A base image push is a different shape: the tag is the commit sha, an immutable
+# repository refuses to move it, and a bad image is superseded by the next commit rather than
+# burning a version number. Trust is scoped to pushes on main instead, which is where the workflow
+# runs, and a pull request or a branch build therefore cannot assume this role at all.
+module "base_image_publisher_role" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  version = "~> 2.0"
+
+  role_name        = "${local.prefix}-base-image-publisher"
+  role_description = "Pushes the shared webbpulse/python-lambda-base image to ECR from the main branch of WebbPulse/WebbPulse-Artifacts."
+
+  # The provider already exists by the time this role is created; an account holds at most one per
+  # URL, so this call trusts the one the Python role creates rather than creating a second.
+  create_oidc_provider = false
+  oidc_provider_arn    = module.python_publisher_role.oidc_provider_arn
+
+  # GitHub issues the rename-proof immutable subject (repo:ORG@ORG_ID/REPO@REPO_ID:...) for this
+  # repository too, so the trust policy must name that form. Read it back with
+  # gh api repos/WebbPulse/WebbPulse-Artifacts/actions/oidc/customization/sub (sub_claim_prefix).
+  # The ref suffix rather than an environment suffix is the deliberate choice described above.
+  subjects = ["repo:WebbPulse@185014056/WebbPulse-Artifacts@1359997352:ref:refs/heads/main"]
+
+  policy_statements = local.base_image_publisher_policy_statements
+}

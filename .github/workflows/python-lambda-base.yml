@@ -1,0 +1,175 @@
+# Builds and pushes the shared Python Lambda base image.
+#
+# This does not call WebbPulse/.github's reusable container-image.yml, and the reason is structural
+# rather than stylistic. That workflow takes a single platform, disables provenance and SBOM
+# attestations so buildx cannot publish an index, and then asserts after the push that the manifest
+# media type is not an index, failing the run if it is. Every one of those is correct for an
+# application image, because Lambda rejects a multi-architecture image for a function. This image is
+# never pulled by Lambda; it is only ever the parent of an application build, and it has to be a
+# multi-architecture index so that CarModPicker's x86_64 builds and Portfolio's arm64 builds can
+# share one base. The reusable workflow would fail this build by design, so this one is written out
+# with the same conventions: third party actions pinned to a full commit SHA with a version comment,
+# least privilege permissions, and a concurrency group.
+name: Python Lambda Base Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "images/python-lambda-base/**"
+      - ".github/workflows/python-lambda-base.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One build at a time against one repository. Tags are immutable, so two concurrent runs on the
+  # same commit would race and the loser would fail its push rather than silently overwrite.
+  group: python-lambda-base
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-west-2
+      ECR_REPOSITORY: webbpulse/python-lambda-base
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step uses the checkout token, so it is not left behind in .git/config.
+          persist-credentials: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ vars.BASE_IMAGE_PUBLISHER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Compute the immutable tag
+        id: tag
+        run: echo "image-tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        # buildx builds linux/arm64 on an x86_64 runner through binfmt emulation. The base image
+        # installs no packages and compiles nothing, so emulation costs seconds here.
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # provenance and sbom stay off. buildx attaches attestations as extra unknown/unknown entries
+      # in the index, and ECR's own image scanning and the console both read those poorly. The index
+      # this build publishes therefore holds exactly two manifests, one per real platform.
+      #
+      # The repository is IMMUTABLE, so only the sha-<commit> tag is pushed. A moving py3.13
+      # convenience tag would be refused on its second push, which is the point of the setting: a
+      # tag that cannot move is what makes a consumer's recorded digest mean something later.
+      # Consumers pin sha-<commit> or the digest this run prints.
+      - name: Build and push the multi-architecture image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: images/python-lambda-base
+          file: images/python-lambda-base/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.image-tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The mirror image of the assertion in the reusable application workflow. There it fails when
+      # the manifest is an index; here it fails when it is not, and when the index does not carry
+      # both platforms. A base that quietly went single platform would break the other project's
+      # build at its next image bump rather than here.
+      - name: Verify the manifest is a two-platform index
+        env:
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$DIGEST" ]; then
+            echo "The build produced no digest."
+            exit 1
+          fi
+
+          MANIFEST=$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageDigest=$DIGEST" \
+            --accepted-media-types \
+              "application/vnd.oci.image.index.v1+json" \
+              "application/vnd.docker.distribution.manifest.list.v2+json" \
+              "application/vnd.oci.image.manifest.v1+json" \
+              "application/vnd.docker.distribution.manifest.v2+json" \
+            --query 'images[0].imageManifest' \
+            --output text)
+
+          # batch-get-image reports an unknown digest in failures[] while still exiting 0, and the
+          # CLI prints None for a missing field, so both cases have to fail here rather than pass.
+          if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
+            echo "Could not read the manifest for $DIGEST."
+            exit 1
+          fi
+
+          echo "$MANIFEST" > manifest.json
+          python3 - <<'PY'
+          import json
+
+          manifest = json.load(open("manifest.json"))
+          media_type = manifest.get("mediaType", "")
+          index_types = {
+              "application/vnd.oci.image.index.v1+json",
+              "application/vnd.docker.distribution.manifest.list.v2+json",
+          }
+          if media_type not in index_types:
+              raise SystemExit(f"Expected a multi-architecture index, got {media_type!r}.")
+
+          found = set()
+          for entry in manifest.get("manifests", []):
+              platform = entry.get("platform", {})
+              found.add("{}/{}".format(platform.get("os"), platform.get("architecture")))
+
+          missing = {"linux/amd64", "linux/arm64"} - found
+          if missing:
+              raise SystemExit(
+                  "The index is missing {}. It holds {}.".format(sorted(missing), sorted(found))
+              )
+
+          print("Multi-architecture index holding {}.".format(sorted(found)))
+          PY
+
+      - name: Summarise the push
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image-tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "## Python Lambda base image"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Repository | \`${ECR_REPOSITORY}\` |"
+            echo "| Tag | \`${IMAGE_TAG}\` |"
+            echo "| Digest | \`${DIGEST}\` |"
+            echo "| Platforms | \`linux/amd64\`, \`linux/arm64\` |"
+            echo
+            echo "Pin it in an application Dockerfile as:"
+            echo
+            echo '```'
+            echo "FROM ${REGISTRY}/${ECR_REPOSITORY}@${DIGEST}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
