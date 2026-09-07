@@ -101,8 +101,13 @@ alone. The subject GitHub puts in the token for an environment-bound job is
 cannot assume the role however the repository's other workflows are written. That is what makes the
 environment's protection rules a real gate on a release rather than a convention.
 
-Each publisher repository sets two secrets on its `publish` environment. Both are read from this
-root's outputs after an apply:
+Neither repository has a `publish` environment yet. Create one in each repository's settings before
+the first release: without it the job's token carries no `environment:publish` subject, the role
+refuses the assume, and the publish fails. The environment is also where a required reviewer goes if
+a release should need a human to approve it.
+
+Each publisher repository then sets two secrets on that environment. Both are read from this root's
+outputs after an apply:
 
 | Secret | Value |
 | --- | --- |
