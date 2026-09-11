@@ -197,12 +197,26 @@ Dockerfile is [`images/python-lambda-base/Dockerfile`](images/python-lambda-base
 
 The image holds two things and nothing else:
 
-- The Python 3.13 runtime, `public.ecr.aws/docker/library/python:3.13-slim`, pinned by digest. The
-  Dockerfile carries the two commands that read the current digest back, so a bump is mechanical.
+- The Python 3.13 runtime, `public.ecr.aws/docker/library/python:3.13-slim`, pinned by digest.
   Public ECR mirrors Docker Hub's official images, so this is the same content without Docker Hub's
   anonymous pull rate limit.
 - The AWS Lambda Web Adapter, copied from `public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1` to
   `/opt/extensions/lambda-adapter`, also pinned by digest.
+
+To bump either pin, read the current digest of the tag and replace the one in the Dockerfile:
+
+```bash
+token=$(curl -s "https://public.ecr.aws/token/?scope=repository:docker/library/python:pull&service=public.ecr.aws" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+curl -sI -H "Authorization: Bearer $token" \
+  -H "Accept: application/vnd.oci.image.index.v1+json" \
+  https://public.ecr.aws/v2/docker/library/python/manifests/3.13-slim \
+  | grep -i docker-content-digest
+```
+
+The adapter bumps the same way against
+`https://public.ecr.aws/v2/awsguru/aws-lambda-adapter/manifests/1.0.1`. Take the digest on the
+index, never on a per-platform manifest, or the build stops being multi-architecture.
 
 Plus the conventions every WebbPulse Lambda image shares: a non-root `app` user, `/app` as the
 working directory, and `AWS_LWA_PORT` and `PORT` both set to `8080`. Both port names are set because
