@@ -10,7 +10,7 @@ variable "aws_region" {
 }
 
 variable "environment" {
-  description = "Which environment this workspace deploys. Delivered by WebbPulse-Platform from the ledger; there is exactly one, and it is shared."
+  description = "Which environment this workspace deploys. There is exactly one, and it is shared."
   type        = string
   default     = "shared"
 
