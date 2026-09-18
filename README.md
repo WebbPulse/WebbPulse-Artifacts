@@ -107,7 +107,7 @@ publisher role's trust is scoped to.
 | CodeArtifact domain | `webbpulse` |
 | CodeArtifact repositories | `pypi-store`, `npm-store`, `python`, `npm`, `shared` |
 | ECR repository | `webbpulse/python-lambda-base`, `IMMUTABLE` tags |
-| Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298`, `870550636948`, `897427573432` |
+| Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298`, `870550636948`, `897427573432`, `212598081999`, `147741822161` |
 | Role name prefix | `artifacts-shared-` |
 | Publisher roles | `artifacts-shared-python-publisher`, `artifacts-shared-npm-publisher`, `artifacts-shared-base-image-publisher`, each `arn:aws:iam::432410731887:role/<name>` |
 | Shared modules | `app.terraform.io/WebbPulse/platform-modules/aws//modules/<name>`, `~> 2.0` |
