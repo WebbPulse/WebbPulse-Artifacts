@@ -14,7 +14,7 @@ single project owns. It deploys into the AWS account `WebbPulse Artifacts`
 | **Account housekeeping** | A tag-based resource group, Cost Explorer anomaly detection, two budgets |
 
 No workloads run in this account: no Lambdas serving traffic, no databases, no
-CloudFront. Those live in the four application accounts, which read from this one
+CloudFront. Those live in the application accounts, which read from this one
 at build time.
 
 There is one environment, `shared`, and one branch, `main`. A package registry
@@ -40,7 +40,7 @@ A `pip install` against `shared` walks `shared` to `python` to `pypi-store` and
 out to PyPI, caching every asset on the way back. Storage is deduplicated and
 billed once per domain.
 
-Read access is granted to the four application accounts at the domain and on
+Read access is granted to the application accounts at the domain and on
 every repository. Publish access is granted only to the two publisher roles, and
 only on the repository each one owns, in both the repository policy and the
 role's own identity policy.
@@ -107,7 +107,7 @@ publisher role's trust is scoped to.
 | CodeArtifact domain | `webbpulse` |
 | CodeArtifact repositories | `pypi-store`, `npm-store`, `python`, `npm`, `shared` |
 | ECR repository | `webbpulse/python-lambda-base`, `IMMUTABLE` tags |
-| Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298` |
+| Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298`, `870550636948`, `897427573432`, `212598081999`, `147741822161` |
 | Role name prefix | `artifacts-shared-` |
 | Publisher roles | `artifacts-shared-python-publisher`, `artifacts-shared-npm-publisher`, `artifacts-shared-base-image-publisher`, each `arn:aws:iam::432410731887:role/<name>` |
 | Shared modules | `app.terraform.io/WebbPulse/platform-modules/aws//modules/<name>`, `~> 2.0` |

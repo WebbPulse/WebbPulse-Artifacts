@@ -16,6 +16,10 @@ locals {
     "621554169154",
     "734702670403",
     "748861776298",
+    "870550636948",
+    "897427573432",
+    "212598081999",
+    "147741822161",
   ]
 
   python_publish_repository_arn = module.codeartifact.repository_arns["python"]
