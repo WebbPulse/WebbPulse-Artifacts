@@ -10,7 +10,7 @@ application dependencies, has no `ENTRYPOINT` and no `CMD`. See the repository
 The three product backends (`CarModPicker/backend`, `Standupless/backend`,
 `WebbPulse-Terraform/backend`) have byte-identical builder stages: same
 `ARG BASE_IMAGE`, same digest-pinned `uv`, same `UV_*` environment, and the same
-two-layer install — a locked `uv sync` that excludes `webbpulse`, then a
+two-layer install: a locked `uv sync` that excludes `webbpulse`, then a
 CodeArtifact-authenticated `uv lock --upgrade-package webbpulse` and `uv sync`.
 
 That duplication is deliberate. Publishing a second `python-lambda-builder` image,
@@ -47,8 +47,8 @@ those semantics. A product would still have to declare the `ARG`, still mount
 `codeartifact_token` itself, and would additionally depend on a script whose layer
 invalidation behaviour now lives behind a digest bump in another repository.
 
-What is actually shared here — a pinned `uv`, a set of `UV_*` values, a two-layer
-install — is already documented, and is stable precisely because it is boring. The
+What is actually shared here, a pinned `uv`, a set of `UV_*` values, a two-layer
+install, is already documented, and is stable precisely because it is boring. The
 cost of the duplication is re-reading 38 identical lines. The cost of removing it is
 slower builds, a weaker cache, and a build-arg contract split across two repositories.
 
