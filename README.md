@@ -166,6 +166,12 @@ so, which keeps them out of forked pull request runs.
   dependencies**, on purpose. Dependencies install in each application's own
   build, so bumping a shared package never requires a base rebuild. It has no
   `ENTRYPOINT` and no `CMD`; every application image sets its own.
+- **There is no builder image and no builder stage**, although the product builder
+  stages are byte identical. A second pinned image defeats `base-image-cache`,
+  which resolves one `ARG BASE_IMAGE=` only; `ONBUILD` runs before the child copies
+  its lockfile in; and `ARG DEPENDENCY_RESOLUTION` has to stay next to the
+  CodeArtifact `RUN` in the product, because the stamp is per build and per
+  environment. `images/python-lambda-base/README.md` has the full reasoning.
 - **`AWS_LWA_PORT` and `PORT` are both set to `8080`.** The adapter reads the
   first and most frameworks read the second; an application binding one while the
   adapter polls the other hangs on every invoke instead of failing loudly.
@@ -186,7 +192,8 @@ so, which keeps them out of forked pull request runs.
 │   └── python-lambda-base.yml   builds and pushes the shared base image
 ├── images/
 │   └── python-lambda-base/
-│       └── Dockerfile           Python 3.13 plus the Lambda Web Adapter, both pinned by digest
+│       ├── Dockerfile           Python 3.13 plus the Lambda Web Adapter, both pinned by digest
+│       └── README.md            what the image carries, and why there is no builder image
 └── terraform/
     ├── versions.tf        required_version, providers, and the cloud block
     ├── providers.tf       the aws provider and its default tags
