@@ -49,16 +49,17 @@ role's own identity policy.
 
 ### A Terraform change
 
-1. Branch from `main` and open a pull request. There is no `staging` branch.
+1. Branch from `main` and open a pull request. There is no `staging` branch. The
+   control plane runs a plan-only run on it.
 2. Read the plan action by action, not off the summary line. Zero destroys and
    zero replacements is the acceptance bar. A registry that is destroyed and
    recreated loses every artifact in it, and a published package version can
    never be republished under the same version.
 3. Merge. The `WebbPulse-Artifacts` workspace queues a plan on `main`.
-4. Approve the apply by hand in HCP Terraform.
+4. Confirm the held apply by hand on the WebbPulse control plane (`terraform.webbpulse.com`).
 
 Credentials are never static. The workspace federates into an IAM run role in
-this account through HCP Terraform's AWS dynamic provider credentials, and both
+this account through the control plane's run role credentials, and both
 the role and the workspace are vended by the factory in `WebbPulse-Platform`.
 
 ### Publishing or refreshing the base image
@@ -103,14 +104,14 @@ publisher role's trust is scoped to.
 | --- | --- |
 | AWS account | `432410731887`, `WebbPulse Artifacts` |
 | Region | `us-west-2`. Lambda cannot pull an image across regions, so a consumer function has to run here |
-| HCP Terraform org / workspace | `WebbPulse` / `WebbPulse-Artifacts`, bound to `main`, working directory `terraform/` |
+| Control plane workspace | `WebbPulse-Artifacts` on `terraform.webbpulse.com`, bound to `main`, working directory `terraform/` |
 | CodeArtifact domain | `webbpulse` |
 | CodeArtifact repositories | `pypi-store`, `npm-store`, `python`, `npm`, `shared` |
 | ECR repository | `webbpulse/python-lambda-base`, `IMMUTABLE` tags |
 | Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298`, `870550636948`, `897427573432`, `212598081999`, `147741822161` |
 | Role name prefix | `artifacts-shared-` |
 | Publisher roles | `artifacts-shared-python-publisher`, `artifacts-shared-npm-publisher`, `artifacts-shared-base-image-publisher`, each `arn:aws:iam::432410731887:role/<name>` |
-| Shared modules | `app.terraform.io/WebbPulse/platform-modules/aws//modules/<name>`, `~> 2.0` |
+| Shared modules | `terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/<name>`, `~> 2.0` |
 
 GitHub Actions variables and secrets read by the workflows:
 
@@ -195,7 +196,7 @@ so, which keeps them out of forked pull request runs.
 │       ├── Dockerfile           Python 3.13 plus the Lambda Web Adapter, both pinned by digest
 │       └── README.md            what the image carries, and why there is no builder image
 └── terraform/
-    ├── versions.tf        required_version, providers, and the cloud block
+    ├── versions.tf        required_version and providers; the runner writes the backend
     ├── providers.tf       the aws provider and its default tags
     ├── variables.tf       aws_region and environment
     ├── locals.tf          the prefix, common tags, and the publisher policy statements

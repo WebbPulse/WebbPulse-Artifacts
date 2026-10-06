@@ -1,5 +1,5 @@
 module "python_publisher_role" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
   version = "~> 2.0"
 
   role_name        = "${local.prefix}-python-publisher"
@@ -13,7 +13,7 @@ module "python_publisher_role" {
 }
 
 module "npm_publisher_role" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
   version = "~> 2.0"
 
   role_name        = "${local.prefix}-npm-publisher"
@@ -28,7 +28,7 @@ module "npm_publisher_role" {
 }
 
 module "base_image_publisher_role" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
   version = "~> 2.0"
 
   role_name        = "${local.prefix}-base-image-publisher"
