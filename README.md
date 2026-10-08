@@ -36,6 +36,13 @@ npm          upstream -> npm-store                  where @webbpulse publishes
 shared       upstream -> python, npm                the single endpoint CI points at
 ```
 
+Two package groups make the first-party names internal-only. `/pypi//webbpulse~`
+(`webbpulse` and any `webbpulse-*` name) and `/npm/webbpulse/*` (the whole
+`@webbpulse` scope) block ingestion from the public registries in every repository
+and allow publishing only into `python` and `npm` respectively. A public package
+squatting one of those names can never enter the domain, so the store upstreams
+are not a dependency-confusion path.
+
 A `pip install` against `shared` walks `shared` to `python` to `pypi-store` and
 out to PyPI, caching every asset on the way back. Storage is deduplicated and
 billed once per domain.
@@ -151,6 +158,10 @@ so, which keeps them out of forked pull request runs.
   package in a repository that proxies a public registry, or in the fan-in, would
   shadow the public package of the same name for everything downstream. The store
   split exists for that reason, and the grants enforce it.
+- **Package groups come from `awscc`, not `aws`.** The `hashicorp/aws` provider has
+  no package group resource (upstream issue 36528), so `awscc_codeartifact_package_group`
+  goes through Cloud Control. `awscc` has no `default_tags`; the tags are passed
+  explicitly. A `BLOCK` on a group always wins over a package's own origin control.
 - **CodeArtifact refuses to combine an external connection with upstreams** on
   one repository. That is why `pypi-store` and `npm-store` exist separately.
 - **ECR tags here are immutable, and that is repository-level.** There is no
@@ -197,11 +208,11 @@ so, which keeps them out of forked pull request runs.
 │       └── README.md            what the image carries, and why there is no builder image
 └── terraform/
     ├── versions.tf        required_version and providers; the runner writes the backend
-    ├── providers.tf       the aws provider and its default tags
+    ├── providers.tf       the aws provider and its default tags, and awscc
     ├── variables.tf       aws_region and environment
     ├── locals.tf          the prefix, common tags, and the publisher policy statements
     ├── data.tf            caller identity and region
-    ├── codeartifact.tf    the domain and its five repositories
+    ├── codeartifact.tf    the domain, its five repositories, and the first-party package groups
     ├── ecr.tf             the base image repository and its policy
     ├── iam_publishers.tf  the three GitHub OIDC publisher roles
     ├── management.tf      the resource group, anomaly detection and budgets
