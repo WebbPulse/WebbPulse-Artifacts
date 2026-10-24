@@ -105,3 +105,13 @@ output "base_image_publisher_role_arn" {
   description = "Role WebbPulse/WebbPulse-Artifacts assumes to push the shared Python Lambda base image, set as the BASE_IMAGE_PUBLISHER_ROLE_ARN repository variable"
   value       = module.base_image_publisher_role.role_arn
 }
+
+output "dependabot_reader_role_name" {
+  description = "Role Dependabot update jobs assume through OIDC to read CodeArtifact, the role-name of the python-index and npm-registry entries in each product's dependabot.yml"
+  value       = aws_iam_role.dependabot_reader.name
+}
+
+output "dependabot_reader_role_arn" {
+  description = "ARN of the Dependabot CodeArtifact reader role"
+  value       = aws_iam_role.dependabot_reader.arn
+}
