@@ -151,6 +151,20 @@ each `npm` entry. Leave `replaces-base` unset on both. The uv index is
 registries. `audience` is left unset, which the proxy defaults to
 `sts.amazonaws.com`.
 
+For npm, give each directory its own `updates` entry and attach
+`codeartifact-npm` only to the directories that depend on `@webbpulse/*`. Each of
+those directories needs a committed, token-free `.npmrc` with the scope line
+below. A directory with the registry attached but no such `.npmrc` fails the
+whole job with `private_registry_config_not_found`, so leave `registries` off the
+directories that use only public packages.
+
+```ini
+@webbpulse:registry=https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/npm/npm/
+```
+
+CI is unaffected: the reusable workflows add the CodeArtifact token over OIDC,
+and public lockfile entries keep their `registry.npmjs.org` `resolved` URLs.
+
 ## Identifiers
 
 | Thing | Value |
