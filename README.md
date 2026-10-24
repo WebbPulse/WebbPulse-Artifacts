@@ -11,6 +11,7 @@ single project owns. It deploys into the AWS account `WebbPulse Artifacts`
 | **CodeArtifact** | The `webbpulse` domain and its five repositories: the first-party Python and npm packages, plus the upstream connections that proxy PyPI and npm |
 | **ECR** | `webbpulse/python-lambda-base`, the base layer the per-domain FastAPI Lambdas are built on |
 | **Publisher roles** | Three IAM roles assumed through GitHub OIDC, plus this account's GitHub OIDC provider |
+| **Dependabot reader role** | One read-only IAM role Dependabot update jobs in the product repositories assume through GitHub OIDC |
 | **Account housekeeping** | A tag-based resource group, Cost Explorer anomaly detection, two budgets |
 
 No workloads run in this account: no Lambdas serving traffic, no databases, no
@@ -105,6 +106,51 @@ publisher role's trust is scoped to.
    role, and that role fetches a CodeArtifact token scoped to the job:
    `aws codeartifact login --tool pip --domain webbpulse --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" --repository shared`.
 
+### Letting Dependabot read CodeArtifact
+
+Dependabot jobs run behind a proxy that only reaches hosts named in a
+`registries` entry, so without one every `uv` update that has to resolve
+`webbpulse`, and every `npm` update whose lockfile holds CodeArtifact `resolved`
+URLs, fails with a 403. The `registries` entries authenticate through OIDC: the
+proxy mints a GitHub Actions token with audience `sts.amazonaws.com`, calls
+`AssumeRoleWithWebIdentity` on `artifacts-shared-dependabot-reader` in this
+account with session name `dependabot-update`, then calls
+`codeartifact:GetAuthorizationToken`. No secret or long-lived key is stored, and
+the role lives in the domain owner's account, so no consumer account is involved.
+
+To add a repository, add it to `dependabot_reader_repositories` in `locals.tf`
+with its repository id and its `sub_claim_prefix`
+(`gh api repos/WebbPulse/<repo>/actions/oidc/customization/sub`), apply this
+root, then add the entries below to the repository's `.github/dependabot.yml`:
+
+```yaml
+registries:
+  codeartifact-python:
+    type: python-index
+    url: https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/
+    aws-region: us-west-2
+    account-id: "432410731887"
+    role-name: artifacts-shared-dependabot-reader
+    domain: webbpulse
+    domain-owner: "432410731887"
+  codeartifact-npm:
+    type: npm-registry
+    url: https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/npm/npm/
+    aws-region: us-west-2
+    account-id: "432410731887"
+    role-name: artifacts-shared-dependabot-reader
+    domain: webbpulse
+    domain-owner: "432410731887"
+```
+
+Each `updates` entry then names the registry it needs: `registries:
+[codeartifact-python]` on the `uv` entry and `registries: [codeartifact-npm]` on
+each `npm` entry. Leave `replaces-base` unset on both. The uv index is
+`explicit`, so only `webbpulse` resolves from it, and `.npmrc` routes only the
+`@webbpulse` scope to the npm repository; everything else keeps the public
+registries. `audience` is left unset, which the proxy defaults to
+`sts.amazonaws.com`.
+
 ## Identifiers
 
 | Thing | Value |
@@ -118,6 +164,8 @@ publisher role's trust is scoped to.
 | Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298`, `870550636948`, `897427573432`, `212598081999`, `147741822161` |
 | Role name prefix | `artifacts-shared-` |
 | Publisher roles | `artifacts-shared-python-publisher`, `artifacts-shared-npm-publisher`, `artifacts-shared-base-image-publisher`, each `arn:aws:iam::432410731887:role/<name>` |
+| Dependabot reader role | `artifacts-shared-dependabot-reader`, trusted by Standupless (`1375434030`), CarModPicker (`1034793334`) and WebbPulse-Portfolio (`1029410045`) |
+| GitHub organization id | `185014056` |
 | Shared modules | `terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/<name>`, `~> 2.0` |
 
 GitHub Actions variables and secrets read by the workflows:
@@ -147,6 +195,16 @@ so, which keeps them out of forked pull request runs.
   `repo:WebbPulse/<repo>:...`. All three publisher roles here use the immutable
   form. Read the repository's `sub_claim_prefix` before writing any trust policy
   against it.
+- **The Dependabot role pins `repository_id` and `repository_owner_id`, and
+  wildcards only the end of `sub`.** GitHub does not document the subject a
+  Dependabot update job carries; the job runs as the dynamic workflow
+  `dynamic/dependabot/dependabot-updates` on the `target-branch`, with actor
+  `dependabot[bot]`. IAM refuses a GitHub trust policy without a `sub`
+  condition, so the role matches `<sub_claim_prefix>:*` and lets the immutable
+  id claims carry the real check. CarModPicker still issues the legacy
+  `repo:WebbPulse/CarModPicker` prefix, which is why each repository records
+  its own. A refused assume shows up in this account's CloudTrail as
+  `AssumeRoleWithWebIdentity`, with the token's subject in `userIdentity`.
 - **The two package roles are scoped to the `publish` GitHub Environment**, so a
   workflow not bound to that environment cannot assume the role however its other
   workflows are written. The environment must exist in the package repository
@@ -210,11 +268,12 @@ so, which keeps them out of forked pull request runs.
     ├── versions.tf        required_version and providers; the runner writes the backend
     ├── providers.tf       the aws provider and its default tags, and awscc
     ├── variables.tf       aws_region and environment
-    ├── locals.tf          the prefix, common tags, and the publisher policy statements
+    ├── locals.tf          the prefix, common tags, the publisher policy statements, and the Dependabot repositories
     ├── data.tf            caller identity and region
     ├── codeartifact.tf    the domain, its five repositories, and the first-party package groups
     ├── ecr.tf             the base image repository and its policy
     ├── iam_publishers.tf  the three GitHub OIDC publisher roles
+    ├── iam_dependabot.tf  the read-only CodeArtifact role Dependabot assumes through OIDC
     ├── management.tf      the resource group, anomaly detection and budgets
     └── outputs.tf         ARNs, ids, and the rendered consumer policy
 ```

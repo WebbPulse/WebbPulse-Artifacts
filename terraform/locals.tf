@@ -92,6 +92,39 @@ locals {
     ],
   )
 
+  github_org_id = "185014056"
+
+  dependabot_reader_repositories = {
+    "Standupless" = {
+      id         = "1375434030"
+      sub_prefix = "repo:WebbPulse@185014056/Standupless@1375434030"
+    }
+    "CarModPicker" = {
+      id         = "1034793334"
+      sub_prefix = "repo:WebbPulse/CarModPicker"
+    }
+    "WebbPulse-Portfolio" = {
+      id         = "1029410045"
+      sub_prefix = "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045"
+    }
+  }
+
+  dependabot_reader_repository_actions = [
+    "codeartifact:DescribeRepository",
+    "codeartifact:GetRepositoryEndpoint",
+    "codeartifact:ListPackages",
+    "codeartifact:ReadFromRepository",
+  ]
+
+  dependabot_reader_package_actions = [
+    "codeartifact:DescribePackageVersion",
+    "codeartifact:GetPackageVersionAsset",
+    "codeartifact:GetPackageVersionReadme",
+    "codeartifact:ListPackageVersionAssets",
+    "codeartifact:ListPackageVersionDependencies",
+    "codeartifact:ListPackageVersions",
+  ]
+
   base_image_repository_arn = module.ecr.repository_arns["python-lambda-base"]
 
   base_image_publisher_policy_statements = [
