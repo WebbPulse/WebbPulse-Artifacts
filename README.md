@@ -175,7 +175,7 @@ and public lockfile entries keep their `registry.npmjs.org` `resolved` URLs.
 | CodeArtifact domain | `webbpulse` |
 | CodeArtifact repositories | `pypi-store`, `npm-store`, `python`, `npm`, `shared` |
 | ECR repository | `webbpulse/python-lambda-base`, `IMMUTABLE` tags |
-| Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298`, `870550636948`, `897427573432`, `212598081999`, `147741822161` |
+| Consumer accounts | `036807648992`, `621554169154`, `734702670403`, `748861776298`, `870550636948`, `897427573432`, `212598081999`, `147741822161`, `167557610890`, `832896310536` |
 | Role name prefix | `artifacts-shared-` |
 | Publisher roles | `artifacts-shared-python-publisher`, `artifacts-shared-npm-publisher`, `artifacts-shared-base-image-publisher`, each `arn:aws:iam::432410731887:role/<name>` |
 | Dependabot reader role | `artifacts-shared-dependabot-reader`, trusted by Standupless (`1375434030`), CarModPicker (`1034793334`) and WebbPulse-Portfolio (`1029410045`) |
